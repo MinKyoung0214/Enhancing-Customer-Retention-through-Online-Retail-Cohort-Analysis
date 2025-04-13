@@ -1,0 +1,54 @@
+use my_sql;
+select *
+from online_retail;
+
+WITH first_purchase AS (
+    SELECT
+        CustomerID,
+        MIN(InvoiceDate) AS first_purchase_date
+    FROM online_retail
+    GROUP BY CustomerID
+),
+cohorts AS (
+    SELECT
+        t.CustomerID,
+        DATE_FORMAT(fp.first_purchase_date, '%Y-%m-01') AS cohort_month,
+        DATE_FORMAT(t.InvoiceDate, '%Y-%m-01') AS order_month
+    FROM online_retail t
+    JOIN first_purchase fp
+      ON t.CustomerID = fp.CustomerID
+),
+cohort_counts AS (
+    SELECT
+        cohort_month,
+        order_month,
+        COUNT(DISTINCT CustomerID) AS num_customers
+    FROM cohorts
+    GROUP BY cohort_month, order_month
+),
+retention AS (
+    SELECT
+        cohort_month,
+        order_month,
+        (YEAR(order_month) * 12 + MONTH(order_month))
+          - (YEAR(cohort_month) * 12 + MONTH(cohort_month)) AS month_offset,
+        num_customers
+    FROM cohort_counts
+),
+-- 각 코호트의 첫 달(월 오프셋 0)에 해당하는 고객 수를 구함
+base AS (
+    SELECT
+        cohort_month,
+        num_customers AS base_customers
+    FROM retention
+    WHERE month_offset = 0
+)
+SELECT
+    r.cohort_month,
+    r.month_offset,
+    r.num_customers,
+    ROUND(r.num_customers / b.base_customers, 4) AS retention_rate
+FROM retention r
+JOIN base b ON r.cohort_month = b.cohort_month
+ORDER BY r.cohort_month, r.month_offset;
+
